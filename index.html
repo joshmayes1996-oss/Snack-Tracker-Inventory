@@ -87,12 +87,16 @@
     const configured = () => !PROJECT_URL.includes('PASTE_') && !PUBLISHABLE_KEY.includes('PASTE_');
     const localDate = (d) => new Date(d).toLocaleString([], {dateStyle:'medium',timeStyle:'short'});
 
-    async function loadSnackOptions(){
+    let snackRetryTimer;
+    async function loadSnackOptions(attempt=0){
       const select=$('snackSelect');
-      try { if(!configured()) throw new Error('A manager still needs to add the Supabase URL and publishable key to this HTML file.'); const {data,error}=await db.from('snack_inventory').select('id, item_name, quantity_on_hand').eq('active',true).gt('quantity_on_hand',0).order('item_name'); if(error) throw error; select.innerHTML='<option value="">Choose a snack</option>'+data.map(i=>`<option value="${i.id}">${esc(i.item_name)} (${i.quantity_on_hand} left)</option>`).join(''); }
-      catch(e){ select.innerHTML='<option value="">Unable to load snacks</option>'; setStatus('claimStatus',e.message,'bad'); }
+      try { if(!configured()) throw new Error('A manager still needs to add the Supabase URL and publishable key to this HTML file.'); const {data,error}=await db.rpc('get_available_snacks'); if(error) throw error; clearTimeout(snackRetryTimer); select.innerHTML='<option value="">Choose a snack</option>'+data.map(i=>`<option value="${i.id}">${esc(i.item_name)} (${i.quantity_on_hand} left)</option>`).join(''); if($('claimStatus').classList.contains('bad')) setStatus('claimStatus'); }
+      catch(e){ select.innerHTML='<option value="">Connecting to snacks…</option>'; setStatus('claimStatus', attempt < 3 && configured() ? 'Connecting automatically…' : e.message, 'bad'); if(attempt < 3 && configured()) snackRetryTimer=setTimeout(()=>loadSnackOptions(attempt+1),[1200,3000,6000][attempt]); }
     }
     $('claimForm').addEventListener('submit', async (e)=>{ e.preventDefault(); setStatus('claimStatus','Recording…'); try { const quantity=Number($('quantity').value); const {data,error}=await db.rpc('claim_free_snack',{p_first:$('firstName').value,p_last:$('lastName').value,p_snack_id:$('snackSelect').value,p_quantity:quantity}); if(error) throw error; setStatus('claimStatus',`Recorded ${quantity} ${data.item_name}${quantity===1?'':'s'}. Enjoy!`,'good'); e.target.reset(); await loadSnackOptions(); } catch(err) { setStatus('claimStatus',err.message,'bad'); } });
+    window.addEventListener('online',()=>loadSnackOptions());
+    window.addEventListener('pageshow',()=>setTimeout(()=>loadSnackOptions(),250));
+    document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible') loadSnackOptions();});
 
     function table(headers, rows){ return rows.length ? `<table class="table"><thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table>` : '<p class="empty">Nothing to show yet.</p>'; }
     function renderDashboard(){
