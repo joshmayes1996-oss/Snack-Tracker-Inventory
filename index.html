@@ -35,8 +35,9 @@
     .dashboard-grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; }.wide { grid-column:1 / -1; }.compact { display:grid; grid-template-columns:1fr 1fr; gap:10px; }.compact .btn { align-self:end; }
     .table-wrap { overflow:auto; }.table { width:100%; border-collapse:collapse; font-size:.9rem; }.table th,.table td { padding:11px 8px; text-align:left; border-bottom:1px solid var(--line); white-space:nowrap; }.table th { color:#cbd5e1; font-size:.78rem; text-transform:uppercase; letter-spacing:.04em; }.small-btn { padding:6px 9px; font-size:.8rem; border-radius:7px; }
     .pill { display:inline-block; border-radius:99px; padding:4px 8px; font-size:.78rem; font-weight:700; }.pill.ok { background:#163b27; color:#83e2a4; }.pill.low { background:#463314; color:#ffd27e; }.empty { color:var(--muted); padding:17px 0; }
+    .qr-panel { display:flex; justify-content:space-between; align-items:center; gap:22px; }.qr-code { flex:0 0 auto; width:184px; min-height:184px; display:grid; place-items:center; padding:4px; background:#fff; border-radius:10px; }.qr-code img,.qr-code canvas { display:block; max-width:176px; height:auto; }.qr-link { color:#fca69b; overflow-wrap:anywhere; }
     dialog { max-width:420px; width:calc(100% - 32px); color:var(--ink); background:#171b22; border:1px solid #3c4350; border-radius:15px; padding:0; }.modal { padding:23px; } dialog::backdrop { background:rgba(0,0,0,.72); }
-    @media(max-width:760px) { .shell{padding:14px}.hero,.dashboard-grid{grid-template-columns:1fr}.cards{grid-template-columns:1fr}.form-grid{grid-template-columns:1fr}.brand span{display:none}.panel{padding:19px}.wide{grid-column:auto} header{padding-bottom:18px}.compact{grid-template-columns:1fr}.brand img{width:92px} }
+    @media(max-width:760px) { .shell{padding:14px}.hero,.dashboard-grid{grid-template-columns:1fr}.cards{grid-template-columns:1fr}.form-grid{grid-template-columns:1fr}.brand span{display:none}.panel{padding:19px}.wide{grid-column:auto} header{padding-bottom:18px}.compact{grid-template-columns:1fr}.brand img{width:92px}.qr-panel{align-items:flex-start;flex-direction:column}.qr-code{width:176px;min-height:176px}.qr-code img,.qr-code canvas{max-width:168px} }
   </style>
 </head>
 <body>
@@ -65,6 +66,7 @@
       <div class="dash-header"><div><h1>Snack manager dashboard</h1><p class="muted">Manage available snacks and review snack activity.</p></div><div class="action-row"><button class="btn" id="refreshBtn">Refresh</button><button class="btn ghost" id="signOutBtn">Sign out</button></div></div>
       <div class="cards"><div class="stat"><span class="muted">Items in stock</span><b id="stockCount">—</b></div><div class="stat"><span class="muted">Snacks taken today</span><b id="todayCount">—</b></div><div class="stat low"><span class="muted">Low-stock items</span><b id="lowCount">—</b></div></div>
       <div class="dashboard-grid">
+        <section class="panel wide qr-panel"><div><h2>Employee QR code</h2><p class="muted">Employees can scan this code with their phone camera to open the snack tracker.</p><a id="qrLink" class="qr-link" target="_blank" rel="noopener"></a><div class="action-row"><button id="downloadQrBtn" class="btn">Download QR code</button></div></div><div id="qrCode" class="qr-code" aria-label="QR code for the snack tracker"></div></section>
         <section class="panel"><h2>Add a snack item</h2><form id="inventoryForm" class="compact"><label>Item name<input id="itemName" required placeholder="Example: Pretzels"></label><label>Starting amount<input id="itemQty" type="number" min="0" value="24" required></label><label>Restock when below<input id="reorderLevel" type="number" min="0" value="5" required></label><button class="btn red" type="submit">Add item</button></form><div id="inventoryStatus" class="status"></div></section>
         <section class="panel wide"><div class="dash-header"><h2>Inventory</h2><button id="exportBtn" class="btn small-btn">Download snack log CSV</button></div><div id="inventoryTable" class="table-wrap"></div></section>
         <section class="panel"><h2>Recent snack activity</h2><div id="logTable" class="table-wrap"></div></section>
@@ -75,6 +77,7 @@
   <dialog id="managerDialog"><form id="loginForm" class="modal"><h2>Manager sign in</h2><p class="muted">Use your manager email and password.</p><label>Email<input id="loginEmail" type="email" required autocomplete="email"></label><label style="margin-top:13px">Password<input id="loginPassword" type="password" required autocomplete="current-password"></label><div class="action-row"><button class="btn red" type="submit">Sign in</button><button class="btn" type="button" id="closeDialog">Cancel</button></div><div id="loginStatus" class="status"></div></form></dialog>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <script>
     // Paste these two values from Supabase: Project Settings > API.
     const PROJECT_URL = 'https://tadmpgmbnsmtierpdrnh.supabase.co';
@@ -86,6 +89,8 @@
     const setStatus = (id, message='', kind='') => { const el=$(id); el.textContent=message; el.className='status '+kind; };
     const configured = () => !PROJECT_URL.includes('PASTE_') && !PUBLISHABLE_KEY.includes('PASTE_');
     const localDate = (d) => new Date(d).toLocaleString([], {dateStyle:'medium',timeStyle:'short'});
+    const snackAppUrl = () => `${location.origin}${location.pathname.replace(/index\.html$/i,'')}`;
+    function renderQrCode(){ const url=snackAppUrl(); const box=$('qrCode'); $('qrLink').href=url; $('qrLink').textContent=url; if(box.dataset.url===url) return; box.dataset.url=url; box.innerHTML=''; if(!window.QRCode){box.textContent='QR code could not load.';return;} new QRCode(box,{text:url,width:176,height:176,colorDark:'#000000',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M}); }
 
     let snackRetryTimer;
     async function loadSnackOptions(attempt=0){
@@ -107,12 +112,13 @@
       document.querySelectorAll('[data-restock]').forEach(b=>b.onclick=()=>restock(b.dataset.restock));
     }
     async function loadDashboard(){
-      if(!configured()) return; const [a,b]=await Promise.all([db.from('snack_inventory').select('*').order('item_name'),db.from('snack_logs').select('*, snack_inventory(item_name)').order('taken_at',{ascending:false}).limit(250)]); const error=a.error||b.error; if(error) throw error; inventory=a.data||[]; logs=b.data||[]; renderDashboard(); await loadSnackOptions();
+      if(!configured()) return; const [a,b]=await Promise.all([db.from('snack_inventory').select('*').order('item_name'),db.from('snack_logs').select('*, snack_inventory(item_name)').order('taken_at',{ascending:false}).limit(250)]); const error=a.error||b.error; if(error) throw error; inventory=a.data||[]; logs=b.data||[]; renderDashboard(); renderQrCode(); await loadSnackOptions();
     }
     async function restock(id){ const item=inventory.find(i=>i.id===id); const amount=Number(prompt(`How many ${item.item_name} are you adding?`, '12')); if(!Number.isInteger(amount)||amount<=0) return; const {error}=await db.from('snack_inventory').update({quantity_on_hand:item.quantity_on_hand+amount}).eq('id',id); if(error) return alert(error.message); await loadDashboard(); }
     $('inventoryForm').addEventListener('submit',async(e)=>{e.preventDefault();setStatus('inventoryStatus','Saving…');const row={item_name:$('itemName').value.trim(),quantity_on_hand:Number($('itemQty').value),reorder_level:Number($('reorderLevel').value),active:true};const {error}=await db.from('snack_inventory').insert(row);if(error)return setStatus('inventoryStatus',error.message,'bad');e.target.reset();setStatus('inventoryStatus','Snack item added.','good');await loadDashboard();});
     $('refreshBtn').onclick=async()=>{try{$('refreshBtn').textContent='Refreshing…';await loadDashboard();}catch(e){alert(e.message)}finally{$('refreshBtn').textContent='Refresh'}};
     $('exportBtn').onclick=()=>{const head=['Taken at','First name','Last name','Snack','Quantity'];const rows=logs.map(l=>[l.taken_at,l.first_name,l.last_name,l.snack_inventory?.item_name,l.quantity]);const csv=[head,...rows].map(r=>r.map(x=>`"${String(x??'').replace(/"/g,'""')}"`).join(',')).join('\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='oracle-free-snacks.csv';a.click();URL.revokeObjectURL(a.href);};
+    $('downloadQrBtn').onclick=()=>{renderQrCode();const canvas=$('qrCode').querySelector('canvas');const image=$('qrCode').querySelector('img');if(!canvas&&!image)return alert('The QR code is still loading. Try again in a moment.');const a=document.createElement('a');a.href=canvas?canvas.toDataURL('image/png'):image.src;a.download='oracle-free-snacks-qr.png';a.click();};
     const dialog=$('managerDialog'); $('managerOpen').onclick=()=>dialog.showModal(); $('closeDialog').onclick=()=>dialog.close();
     $('loginForm').addEventListener('submit',async(e)=>{e.preventDefault();setStatus('loginStatus','Signing in…');const {data,error}=await db.auth.signInWithPassword({email:$('loginEmail').value,password:$('loginPassword').value});if(error)return setStatus('loginStatus',error.message,'bad');const check=await db.from('snack_managers').select('id').eq('id',data.user.id).maybeSingle();if(check.error||!check.data){await db.auth.signOut();return setStatus('loginStatus','This account is not set up as a snack manager.','bad');}dialog.close();$('employeeView').classList.add('hidden');$('managerView').classList.remove('hidden');try{await loadDashboard()}catch(err){alert(err.message)}});
     $('signOutBtn').onclick=async()=>{await db.auth.signOut();$('managerView').classList.add('hidden');$('employeeView').classList.remove('hidden');};
