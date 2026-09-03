@@ -58,17 +58,15 @@
           <div class="action-row"><button class="btn red" type="submit">Record snack</button><span id="claimStatus" class="status" aria-live="polite"></span></div>
         </form>
       </section>
-      <aside class="panel side-card"><div class="side-icon">🍿</div><h2>Enjoy!</h2><p class="muted">This kiosk only records free-snack activity. Managers can add people, restock items, and review the snack log.</p></aside>
+      <aside class="panel side-card"><div class="side-icon">🍿</div><h2>Enjoy!</h2><p class="muted">This kiosk records only your name, snack, quantity, and time. Managers can restock items and review the snack log.</p></aside>
     </section>
 
     <section id="managerView" class="dashboard hidden">
-      <div class="dash-header"><div><h1>Snack manager dashboard</h1><p class="muted">Manage the kiosk, stock, and snack activity.</p></div><div class="action-row"><button class="btn" id="refreshBtn">Refresh</button><button class="btn ghost" id="signOutBtn">Sign out</button></div></div>
+      <div class="dash-header"><div><h1>Snack manager dashboard</h1><p class="muted">Manage available snacks and review snack activity.</p></div><div class="action-row"><button class="btn" id="refreshBtn">Refresh</button><button class="btn ghost" id="signOutBtn">Sign out</button></div></div>
       <div class="cards"><div class="stat"><span class="muted">Items in stock</span><b id="stockCount">—</b></div><div class="stat"><span class="muted">Snacks taken today</span><b id="todayCount">—</b></div><div class="stat low"><span class="muted">Low-stock items</span><b id="lowCount">—</b></div></div>
       <div class="dashboard-grid">
-        <section class="panel"><h2>Add or restore employee</h2><form id="employeeForm" class="compact"><label>First name<input id="addFirst" required></label><label>Last name<input id="addLast" required></label><label>Team<select id="addTeam"><option>Manager</option><option>Team Lead</option><option>Team 1</option><option>Team 2</option><option>Team 3</option><option>Team 4</option><option>Team 5</option></select></label><button class="btn red" type="submit">Save employee</button></form><div id="employeeStatus" class="status"></div></section>
         <section class="panel"><h2>Add a snack item</h2><form id="inventoryForm" class="compact"><label>Item name<input id="itemName" required placeholder="Example: Pretzels"></label><label>Starting amount<input id="itemQty" type="number" min="0" value="24" required></label><label>Restock when below<input id="reorderLevel" type="number" min="0" value="5" required></label><button class="btn red" type="submit">Add item</button></form><div id="inventoryStatus" class="status"></div></section>
         <section class="panel wide"><div class="dash-header"><h2>Inventory</h2><button id="exportBtn" class="btn small-btn">Download snack log CSV</button></div><div id="inventoryTable" class="table-wrap"></div></section>
-        <section class="panel"><h2>Active employees</h2><div id="employeeTable" class="table-wrap"></div></section>
         <section class="panel"><h2>Recent snack activity</h2><div id="logTable" class="table-wrap"></div></section>
       </div>
     </section>
@@ -79,43 +77,38 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
     // Paste these two values from Supabase: Project Settings > API.
-    const PROJECT_URL = 'https://tadmpgmbnsmtierpdrnh.supabase.co';
-    const PUBLISHABLE_KEY = 'sb_publishable_IMi0CMKurj3hyGLC83GjDw_f1Kj0c9k';
-    const KIOSK_FUNCTION = 'snack-kiosk';
+    const PROJECT_URL = 'PASTE_PROJECT_URL_HERE';
+    const PUBLISHABLE_KEY = 'PASTE_PUBLISHABLE_KEY_HERE';
     const db = window.supabase.createClient(PROJECT_URL, PUBLISHABLE_KEY);
     const $ = (id) => document.getElementById(id);
-    let inventory = [], employees = [], logs = [];
+    let inventory = [], logs = [];
     const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     const setStatus = (id, message='', kind='') => { const el=$(id); el.textContent=message; el.className='status '+kind; };
     const configured = () => !PROJECT_URL.includes('PASTE_') && !PUBLISHABLE_KEY.includes('PASTE_');
-    const api = async (body) => { if(!configured()) throw new Error('A manager still needs to add the Supabase URL and publishable key to this HTML file.'); const r=await fetch(`${PROJECT_URL}/functions/v1/${KIOSK_FUNCTION}`,{method:'POST',headers:{'Content-Type':'application/json','apikey':PUBLISHABLE_KEY},body:JSON.stringify(body)}); const data=await r.json(); if(!r.ok) throw new Error(data.error || 'Request failed.'); return data; };
     const localDate = (d) => new Date(d).toLocaleString([], {dateStyle:'medium',timeStyle:'short'});
 
     async function loadSnackOptions(){
       const select=$('snackSelect');
-      try { const data=await api({action:'options'}); select.innerHTML='<option value="">Choose a snack</option>'+data.items.map(i=>`<option value="${i.id}">${esc(i.item_name)} (${i.quantity_on_hand} left)</option>`).join(''); }
+      try { if(!configured()) throw new Error('A manager still needs to add the Supabase URL and publishable key to this HTML file.'); const {data,error}=await db.from('snack_inventory').select('id, item_name, quantity_on_hand').eq('active',true).gt('quantity_on_hand',0).order('item_name'); if(error) throw error; select.innerHTML='<option value="">Choose a snack</option>'+data.map(i=>`<option value="${i.id}">${esc(i.item_name)} (${i.quantity_on_hand} left)</option>`).join(''); }
       catch(e){ select.innerHTML='<option value="">Unable to load snacks</option>'; setStatus('claimStatus',e.message,'bad'); }
     }
-    $('claimForm').addEventListener('submit', async (e)=>{ e.preventDefault(); setStatus('claimStatus','Recording…'); try { const data=await api({action:'claim',first:$('firstName').value,last:$('lastName').value,snackId:$('snackSelect').value,quantity:$('quantity').value}); setStatus('claimStatus',data.message,'good'); e.target.reset(); await loadSnackOptions(); } catch(err) { setStatus('claimStatus',err.message,'bad'); } });
+    $('claimForm').addEventListener('submit', async (e)=>{ e.preventDefault(); setStatus('claimStatus','Recording…'); try { const quantity=Number($('quantity').value); const {data,error}=await db.rpc('claim_free_snack',{p_first:$('firstName').value,p_last:$('lastName').value,p_snack_id:$('snackSelect').value,p_quantity:quantity}); if(error) throw error; setStatus('claimStatus',`Recorded ${quantity} ${data.item_name}${quantity===1?'':'s'}. Enjoy!`,'good'); e.target.reset(); await loadSnackOptions(); } catch(err) { setStatus('claimStatus',err.message,'bad'); } });
 
     function table(headers, rows){ return rows.length ? `<table class="table"><thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table>` : '<p class="empty">Nothing to show yet.</p>'; }
     function renderDashboard(){
       const today=new Date().toDateString(); const low=inventory.filter(i=>i.active && i.quantity_on_hand<=i.reorder_level);
       $('stockCount').textContent=inventory.filter(i=>i.active).reduce((n,i)=>n+i.quantity_on_hand,0); $('todayCount').textContent=logs.filter(l=>new Date(l.taken_at).toDateString()===today).reduce((n,l)=>n+l.quantity,0); $('lowCount').textContent=low.length;
       $('inventoryTable').innerHTML=table(['Item','On hand','Reorder level','Status','Action'],inventory.filter(i=>i.active).map(i=>`<tr><td>${esc(i.item_name)}</td><td>${i.quantity_on_hand}</td><td>${i.reorder_level}</td><td><span class="pill ${i.quantity_on_hand<=i.reorder_level?'low':'ok'}">${i.quantity_on_hand<=i.reorder_level?'Restock':'Good'}</span></td><td><button class="btn small-btn" data-restock="${i.id}">+ Restock</button></td></tr>`));
-      $('employeeTable').innerHTML=table(['Name','Team','Action'],employees.filter(e=>e.active).map(e=>`<tr><td>${esc(e.first_name)} ${esc(e.last_name)}</td><td>${esc(e.team)}</td><td><button class="btn small-btn" data-archive="${e.id}">Archive</button></td></tr>`));
-      $('logTable').innerHTML=table(['When','Employee','Snack','Qty'],logs.slice(0,50).map(l=>`<tr><td>${localDate(l.taken_at)}</td><td>${esc(l.snack_employees?.first_name)} ${esc(l.snack_employees?.last_name)}</td><td>${esc(l.snack_inventory?.item_name)}</td><td>${l.quantity}</td></tr>`));
-      document.querySelectorAll('[data-restock]').forEach(b=>b.onclick=()=>restock(b.dataset.restock)); document.querySelectorAll('[data-archive]').forEach(b=>b.onclick=()=>archiveEmployee(b.dataset.archive));
+      $('logTable').innerHTML=table(['When','Name','Snack','Qty'],logs.slice(0,50).map(l=>`<tr><td>${localDate(l.taken_at)}</td><td>${esc(l.first_name)} ${esc(l.last_name)}</td><td>${esc(l.snack_inventory?.item_name)}</td><td>${l.quantity}</td></tr>`));
+      document.querySelectorAll('[data-restock]').forEach(b=>b.onclick=()=>restock(b.dataset.restock));
     }
     async function loadDashboard(){
-      if(!configured()) return; const [a,b,c]=await Promise.all([db.from('snack_employees').select('*').order('last_name'),db.from('snack_inventory').select('*').order('item_name'),db.from('snack_logs').select('*, snack_employees(first_name,last_name,team), snack_inventory(item_name)').order('taken_at',{ascending:false}).limit(250)]); const error=a.error||b.error||c.error; if(error) throw error; employees=a.data||[]; inventory=b.data||[]; logs=c.data||[]; renderDashboard(); await loadSnackOptions();
+      if(!configured()) return; const [a,b]=await Promise.all([db.from('snack_inventory').select('*').order('item_name'),db.from('snack_logs').select('*, snack_inventory(item_name)').order('taken_at',{ascending:false}).limit(250)]); const error=a.error||b.error; if(error) throw error; inventory=a.data||[]; logs=b.data||[]; renderDashboard(); await loadSnackOptions();
     }
     async function restock(id){ const item=inventory.find(i=>i.id===id); const amount=Number(prompt(`How many ${item.item_name} are you adding?`, '12')); if(!Number.isInteger(amount)||amount<=0) return; const {error}=await db.from('snack_inventory').update({quantity_on_hand:item.quantity_on_hand+amount}).eq('id',id); if(error) return alert(error.message); await loadDashboard(); }
-    async function archiveEmployee(id){ if(!confirm('Archive this employee? They will no longer be able to record snacks, but history will stay.')) return; const {error}=await db.from('snack_employees').update({active:false}).eq('id',id); if(error) return alert(error.message); await loadDashboard(); }
-    $('employeeForm').addEventListener('submit',async(e)=>{e.preventDefault();setStatus('employeeStatus','Saving…');const row={first_name:$('addFirst').value.trim(),last_name:$('addLast').value.trim(),team:$('addTeam').value,active:true};const {error}=await db.from('snack_employees').upsert(row,{onConflict:'first_name,last_name'});if(error)return setStatus('employeeStatus',error.message,'bad');e.target.reset();setStatus('employeeStatus','Employee saved.','good');await loadDashboard();});
     $('inventoryForm').addEventListener('submit',async(e)=>{e.preventDefault();setStatus('inventoryStatus','Saving…');const row={item_name:$('itemName').value.trim(),quantity_on_hand:Number($('itemQty').value),reorder_level:Number($('reorderLevel').value),active:true};const {error}=await db.from('snack_inventory').insert(row);if(error)return setStatus('inventoryStatus',error.message,'bad');e.target.reset();setStatus('inventoryStatus','Snack item added.','good');await loadDashboard();});
     $('refreshBtn').onclick=async()=>{try{$('refreshBtn').textContent='Refreshing…';await loadDashboard();}catch(e){alert(e.message)}finally{$('refreshBtn').textContent='Refresh'}};
-    $('exportBtn').onclick=()=>{const head=['Taken at','First name','Last name','Team','Snack','Quantity'];const rows=logs.map(l=>[l.taken_at,l.snack_employees?.first_name,l.snack_employees?.last_name,l.snack_employees?.team,l.snack_inventory?.item_name,l.quantity]);const csv=[head,...rows].map(r=>r.map(x=>`"${String(x??'').replace(/"/g,'""')}"`).join(',')).join('\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='oracle-free-snacks.csv';a.click();URL.revokeObjectURL(a.href);};
+    $('exportBtn').onclick=()=>{const head=['Taken at','First name','Last name','Snack','Quantity'];const rows=logs.map(l=>[l.taken_at,l.first_name,l.last_name,l.snack_inventory?.item_name,l.quantity]);const csv=[head,...rows].map(r=>r.map(x=>`"${String(x??'').replace(/"/g,'""')}"`).join(',')).join('\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='oracle-free-snacks.csv';a.click();URL.revokeObjectURL(a.href);};
     const dialog=$('managerDialog'); $('managerOpen').onclick=()=>dialog.showModal(); $('closeDialog').onclick=()=>dialog.close();
     $('loginForm').addEventListener('submit',async(e)=>{e.preventDefault();setStatus('loginStatus','Signing in…');const {data,error}=await db.auth.signInWithPassword({email:$('loginEmail').value,password:$('loginPassword').value});if(error)return setStatus('loginStatus',error.message,'bad');const check=await db.from('snack_managers').select('id').eq('id',data.user.id).maybeSingle();if(check.error||!check.data){await db.auth.signOut();return setStatus('loginStatus','This account is not set up as a snack manager.','bad');}dialog.close();$('employeeView').classList.add('hidden');$('managerView').classList.remove('hidden');try{await loadDashboard()}catch(err){alert(err.message)}});
     $('signOutBtn').onclick=async()=>{await db.auth.signOut();$('managerView').classList.add('hidden');$('employeeView').classList.remove('hidden');};
